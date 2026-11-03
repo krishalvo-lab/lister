@@ -34,6 +34,7 @@ Brukere: Kristian, kjæresten Iris og alle de deler lister med. Alle har iPhone.
 - **Endringshistorikk:** hvert punkt lagrer `endret_av` og `endret` og viser «Navn · tid siden».
 - **Legge til:** hurtigfelt med avdeling, eller fullt skjema. Punkter kan endres og fjernes.
 - **Menyen ⋯:** del live, del kopi, stopp deling, nytt navn, kopier som tekst (SMS), alt tilbake til Nei, fjern alt som er Ja, lag kopi, arkiver, slett.
+- **Sortering:** i handlelister med butikk kan du gruppere etter avdeling eller butikk og filtrere på én butikk (chips, lagres per enhet). Oppsummeringen følger filteret. Lister har `kategori` (Mat, Bygg, Hjem, Reise, Annet), og forsiden kan filtreres på kategori.
 - **Synk:** polling hvert 12. sekund (30 s på forsiden) med ETag. Lagring er op-basert: `mutate()` legger op i kø, og `flush()` gjør PUT med sha. Ved 409 hentes fersk fil og op-ene spilles av på nytt, så samtidige endringer slås sammen.
 - **Innlogging:** fine-grained GitHub-token per enhet, lagret i localStorage. Oppsettsiden forklarer hvordan nøkkelen lages.
 - **Live-deling** `#d/<id>/<kode>`: lista får `del_kode`. Mottakeren redigerer samme fil via Workeren, oppgir et navn (gjestenavn) og ser endringer fra andre. Workeren slipper bare gjennom fila med riktig kode, og mottakeren kan ikke endre `del_kode`, `type` eller `arkivert`. «Stopp deling» fjerner koden, og lenken dør med en gang.
@@ -60,6 +61,7 @@ Bare det han ber om, ingen ekstra verktøy eller utstyr. Ukjent mengde skrives s
 
 ## Kjente begrensninger / mulige neste steg
 
+- **Sortering:** i handlelister med butikk kan du gruppere etter avdeling eller butikk og filtrere på én butikk (chips, lagres per enhet). Oppsummeringen følger filteret. Lister har `kategori` (Mat, Bygg, Hjem, Reise, Annet), og forsiden kan filtreres på kategori.
 - **Synk:** polling med ca. 12 s forsinkelse, ikke ekte push. Ekte sanntid krever Durable Objects/WebSocket i Workeren.
 - **Kopi-deling** synker ikke. Den er ment for de som bare skal ha en egen kopi.
 - **Nøkler:** hver enhet trenger sin egen token. Det finnes ingen brukerkontoer.
