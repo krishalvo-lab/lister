@@ -27,8 +27,7 @@ const TYPES = {
 };
 const typeOf = d => TYPES[d && d.type] || TYPES.huskeliste;
 const KATEGORIER = ['Mat', 'Bygg', 'Hjem', 'Reise', 'Annet'];
-const defKat = type => type === 'handleliste' ? 'Mat' : type === 'pakkeliste' ? 'Reise' : 'Annet';
-const katOf = d => KATEGORIER.includes(d.kategori) ? d.kategori : defKat(d.type);
+const katOf = d => KATEGORIER.includes(d.kategori) ? d.kategori : '';
 
 /* ---------- state ---------- */
 const S = {
@@ -351,20 +350,21 @@ function viewHome() {
     const c = counts(e.d), pct = c.tot ? Math.round(c.Ja / c.tot * 100) : 0;
     return `<button class="card" data-act="open" data-path="${esc(e.path)}">
       <div class="c-main"><h3>${esc(e.d.navn)}</h3>
-        <p>${esc(typeOf(e.d).label)} · ${esc(katOf(e.d))}${e.d.oppdatert ? ' · ' + esc(when(e.d.oppdatert)) + (e.d.oppdatert_av ? ' av ' + esc(e.d.oppdatert_av) : '') : ''}</p>
+        <p>${esc(typeOf(e.d).label)}${katOf(e.d) ? ' · ' + esc(katOf(e.d)) : ''}${e.d.oppdatert ? ' · ' + esc(when(e.d.oppdatert)) + (e.d.oppdatert_av ? ' av ' + esc(e.d.oppdatert_av) : '') : ''}</p>
         <div class="bar"><i style="width:${pct}%"></i></div></div>
       <div class="prog"><b>${c.Ja}/${c.tot}</b><small>${c.Usikker ? c.Usikker + ' usikker' : 'ferdig'}</small></div></button>`;
   };
   let html = `<div class="home-head"><div><p class="eyebrow">${esc(navn())}</p><h1 class="display">Lister</h1></div>
     <button class="btn btn-yellow" data-act="new">+ Ny liste</button></div>`;
   const kats = KATEGORIER.filter(k => active.some(e => katOf(e.d) === k));
+  if (active.some(e => !katOf(e.d))) kats.push('Uten kategori');
   let hk = ls.get('lister.homeKat'); if (!kats.includes(hk)) hk = '';
   if (kats.length > 1) html += `<div class="sortbar"><button class="chip" data-act="homekat" data-val="" aria-pressed="${!hk}">Alle</button>${kats.map(k => `<button class="chip" data-act="homekat" data-val="${k}" aria-pressed="${hk === k}">${k}</button>`).join('')}</div>`;
   if (!entries.length) {
     html += `<div class="empty">Ingen lister ennå.<br>Trykk <b>+ Ny liste</b>, eller be Claude lage en.</div>`;
   } else {
     Object.keys(TYPES).forEach(t => {
-      const g = active.filter(e => e.d.type === t && (!hk || katOf(e.d) === hk)).sort(sortFn);
+      const g = active.filter(e => e.d.type === t && (!hk || (katOf(e.d) || 'Uten kategori') === hk)).sort(sortFn);
       if (!g.length) return;
       html += `<p class="eyebrow group-title">${esc(TYPES[t].flertall)}</p><div class="cards">${g.map(card).join('')}</div>`;
     });
@@ -503,8 +503,8 @@ function sheetNewList(prefill) {
     <div class="field"><label for="n-navn">Navn</label><input id="n-navn" type="text" name="navn" value="${esc((prefill && prefill.navn) || '')}" placeholder="f.eks. Fajitas, Hytta, Tanzania" required autofocus></div>
     <div class="field"><label>Type</label><div class="seg">${Object.entries(TYPES).map(([k, v]) => `<button type="button" class="v-type" data-act="seg" data-val="${k}" aria-pressed="${k === t}">${v.label}</button>`).join('')}</div>
       <input type="hidden" name="status" value="${t}"></div>
-    <div class="field"><label>Kategori</label><div class="seg seg5">${KATEGORIER.map(x => `<button type="button" class="v-type" data-act="seg" data-val="${x}" aria-pressed="${x === ((prefill && prefill.kategori) || defKat(t))}">${x}</button>`).join('')}</div>
-      <input type="hidden" name="kategori" value="${(prefill && prefill.kategori) || defKat(t)}"></div>
+    <div class="field"><label>Kategori</label><div class="seg seg5">${KATEGORIER.map(x => `<button type="button" class="v-type" data-act="seg" data-val="${x}" aria-pressed="${x === ((prefill && prefill.kategori) || '')}">${x}</button>`).join('')}</div>
+      <input type="hidden" name="kategori" value="${(prefill && prefill.kategori) || ''}"></div>
     ${prefill && prefill.copyOf ? `<input type="hidden" name="copyOf" value="${esc(prefill.copyOf)}"><p class="note">Alle punkter kopieres og settes til «Nei».</p>` : ''}
     <div class="actions"><button class="btn btn-dark" type="submit">Opprett</button><button class="btn" type="button" data-act="close">Avbryt</button></div>
   </form>`);
@@ -525,7 +525,7 @@ function sheetListMenu() {
     ${WORKER ? `<button class="btn btn-yellow" data-act="m-live">${d.del_kode ? 'Send live-lenken på nytt' : 'Del live (redigerer samme liste)'}</button>` : ''}
     ${d.del_kode ? '<button class="btn btn-danger" data-act="m-stopshare">Stopp deling</button>' : ''}
     <button class="btn" data-act="m-rename">Gi nytt navn</button>
-    <button class="btn" data-act="m-kat">Kategori: ${esc(katOf(d))}</button>
+    <button class="btn" data-act="m-kat">Kategori: ${esc(katOf(d) || 'ikke valgt')}</button>
     <button class="btn" data-act="m-share">${WORKER ? 'Del kopi (mottakeren får sin egen)' : 'Del lenke (bare denne lista)'}</button>
     <button class="btn" data-act="m-text">Kopier som tekst (til SMS)</button>
     <button class="btn" data-act="m-reset">Sett alt tilbake til «Nei»</button>
@@ -553,7 +553,7 @@ async function createList(navnStr, type, copyOf, kategori) {
   const path = `${DIR}/${id}.json`;
   const src = copyOf && S.lists[copyOf] ? S.lists[copyOf].data : null;
   const data = normalize({
-    navn: navnStr, type, kategori: KATEGORIER.includes(kategori) ? kategori : (src && src.kategori) || defKat(type), opprettet: today(), arkivert: false,
+    navn: navnStr, type, kategori: KATEGORIER.includes(kategori) ? kategori : (src && src.kategori) || '', opprettet: today(), arkivert: false,
     avdelinger: src ? src.avdelinger.slice() : TYPES[type].avd.slice(),
     punkter: src ? src.punkter.map(p => Object.assign({}, p, { id: uid(), status: 'Nei' })) : []
   });
@@ -692,6 +692,7 @@ document.addEventListener('submit', async e => {
       break;
     }
     case 'newlist': {
+      if (!KATEGORIER.includes(v.kategori)) { toast('Velg kategori'); return; }
       const btn = f.querySelector('[type=submit]'); btn.disabled = true; btn.textContent = 'Oppretter…';
       try { const path = await createList(v.navn, v.status, v.copyOf, v.kategori); closeSheet(); go('list', path); }
       catch (err) { handleErr(err); btn.disabled = false; btn.textContent = 'Opprett'; toast('Kunne ikke opprette lista'); }
@@ -699,7 +700,7 @@ document.addEventListener('submit', async e => {
     }
     case 'sendback': ls.set('lister.mittNavn', v.navn); shareList(v.navn); break;
     case 'guestname': ls.set('lister.mittNavn', v.navn); closeSheet(); toast('Hei, ' + v.navn); break;
-    case 'kat': closeSheet(); mutate(`kategori ${v.kategori}`, d => { d.kategori = v.kategori; }); break;
+    case 'kat': if (!KATEGORIER.includes(v.kategori)) { toast('Velg kategori'); return; } closeSheet(); mutate(`kategori ${v.kategori}`, d => { d.kategori = v.kategori; }); break;
     case 'rename': closeSheet(); mutate(`nytt navn ${v.navn}`, d => { d.navn = v.navn; }); break;
   }
 });
