@@ -7,3 +7,4 @@ Statisk app uten byggesteg: `index.html`, `style.css`, `app.js`, ikoner og `mani
 - Stil: samme uttrykk som halvorsenogfjetland.no (Archivo/Inter, --ink #17191C, --ground #F4F2ED, --yellow #F5B800). Status-farger: Ja #C6EFCE, Usikker #FFEB9C, Nei #FFC7CE.
 - Mobil først (iPhone, Safari), og trykkflater skal være minst 44 px.
 - Test lokalt med Playwright mot en mock av api.github.com før push.
+- Deling: `#del=<z|j><base64url>` inneholder hele lista (z = deflate-raw-komprimert JSON, j = rå JSON). Shared view (`S.view='shared'`) lagrer avkrysninger og tillegg i localStorage. «Send tilbake» lager ny lenke med `kilde`, og `mergeShared()` legger til nye punkter og tar med Ja/Usikker på punkter som står som Nei. `dellenke.py` i datarepoet lager samme format.

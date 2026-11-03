@@ -206,6 +206,10 @@ async function refreshList() {
 function mutate(desc, fn) {
   const cur = S.cur; if (!cur || !cur.data) return;
   fn(cur.data);
+  if (cur.shared) {
+    const st = {}; cur.data.punkter.forEach(p => { if (p.status !== 'Nei') st[p.id] = p.status; });
+    ls.set(cur.key, JSON.stringify({ st, extra: cur.data.punkter.filter(p => p.lokal) })); render(); return;
+  }
   cur.pending.push({ desc, fn });
   S.lists[cur.path] = { sha: cur.sha, data: cur.data };
   render();
@@ -273,7 +277,7 @@ function render() {
   const app = $('#app');
   if (S.view === 'setup') app.innerHTML = viewSetup();
   else if (S.view === 'home') app.innerHTML = viewHome();
-  else if (S.view === 'list') app.innerHTML = viewList();
+  else if (S.view === 'list' || S.view === 'shared') app.innerHTML = viewList();
   else app.innerHTML = '<p class="loading">Laster…</p>';
 }
 
@@ -343,6 +347,20 @@ function viewList() {
   const lastAvd = ls.get('lister.sistAvd.' + cur.path);
   const defAvd = order.includes(lastAvd) ? lastAvd : (T === TYPES.huskeliste ? order[0] : (order.includes('Annet') ? 'Annet' : order[order.length - 1]));
 
+  if (cur.shared) {
+    return `<div class="l-head"><div class="t"><p class="eyebrow">${esc(T.label)}${cur.fra ? ' · delt av ' + esc(cur.fra) : ''}</p><h1 class="display">${esc(d.navn)}</h1></div>
+      <button class="icon-btn" data-act="m-text" aria-label="Kopier som tekst"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg></button></div>
+      <p class="note">Trykk for å krysse av, og legg til det som mangler i feltet under. Endringene lagres på denne telefonen. Trykk «Send tilbake» når du vil at ${esc(cur.fra || 'avsenderen')} skal få dem.</p>
+      <form class="quick" data-form="quick">
+        <input type="text" name="tekst" placeholder="Legg til ${esc(T.tekst.toLowerCase())}…" autocomplete="off" enterkeyhint="done" aria-label="Ny ${esc(T.tekst.toLowerCase())}">
+        <select name="avdeling" aria-label="${esc(T.gruppe)}">${order.map(a => `<option${a === (order.includes('Annet') ? 'Annet' : order[order.length - 1]) ? ' selected' : ''}>${esc(a)}</option>`).join('')}</select>
+        <button class="btn btn-dark" type="submit" aria-label="Legg til" style="padding:0 16px">+</button>
+      </form>
+      <div class="actions" style="margin:0 0 6px"><button class="btn btn-yellow" data-act="m-sendback">Send tilbake</button>
+        ${token() ? `<button class="btn" data-act="m-import">Lagre i mine lister</button>` : ''}</div>
+      <div class="tools"><label><input type="checkbox" data-act="skjul"${skjul ? ' checked' : ''}> Skjul det som er ${T === TYPES.handleliste ? 'kjøpt' : 'ferdig'}</label></div>`
+      + listBody(d, T, order, skjul, c, true);
+  }
   let html = `<div class="l-head"><div class="t"><p class="eyebrow">${esc(T.label)}</p><h1 class="display">${esc(d.navn)}</h1></div>
     <button class="icon-btn" data-act="listmenu" aria-label="Flere valg"><svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg></button></div>
   <form class="quick" data-form="quick">
@@ -352,7 +370,11 @@ function viewList() {
   </form>
   <div class="tools"><label><input type="checkbox" data-act="skjul"${skjul ? ' checked' : ''}> Skjul det som er ${T === TYPES.handleliste ? 'kjøpt' : 'ferdig'}</label>
     <button class="link" data-act="additem">Legg til med detaljer</button></div>`;
+  return html + listBody(d, T, order, skjul, c, false);
+}
 
+function listBody(d, T, order, skjul, c, shared) {
+  let html = '';
   let shown = 0;
   order.forEach(avd => {
     const items = d.punkter.filter(p => p.avdeling === avd);
@@ -361,9 +383,9 @@ function viewList() {
     const ferdig = items.filter(p => p.status === 'Ja').length;
     if (!vis.length) return;
     shown += vis.length;
-    html += `<section class="dept"><div class="dept-h">${esc(avd)}<span>${ferdig}/${items.length}</span></div><div class="items">${vis.map(p => itemRow(p, T)).join('')}</div></section>`;
+    html += `<section class="dept"><div class="dept-h">${esc(avd)}<span>${ferdig}/${items.length}</span></div><div class="items">${vis.map(p => itemRow(p, T, shared)).join('')}</div></section>`;
   });
-  if (!d.punkter.length) html += `<div class="empty" style="margin-top:20px">Tom liste. Skriv i feltet over for å legge til.</div>`;
+  if (!d.punkter.length) html += `<div class="empty" style="margin-top:20px">${shared ? 'Lista er tom.' : 'Tom liste. Skriv i feltet over for å legge til.'}</div>`;
   else if (!shown) html += `<div class="empty" style="margin-top:20px">Alt er ${T === TYPES.handleliste ? 'kjøpt' : 'ferdig'} 👌</div>`;
 
   html += `<section class="sum"><h2 class="display">Oppsummering</h2><dl>
@@ -371,18 +393,18 @@ function viewList() {
     <dt><span class="pill" style="background:var(--ja)"></span>Ferdig</dt><dd>${c.Ja}</dd>
     <dt><span class="pill" style="background:var(--nei)"></span>Mangler</dt><dd>${c.Nei}</dd>
     <dt><span class="pill" style="background:var(--usikker)"></span>Usikker${T === TYPES.handleliste ? ' (sjekk hjemme)' : ''}</dt><dd>${c.Usikker}</dd>
-  </dl>${d.oppdatert ? `<p class="eyebrow" style="margin-top:14px;letter-spacing:.08em;text-transform:none">Sist endret ${esc(when(d.oppdatert))}${d.oppdatert_av ? ' av ' + esc(d.oppdatert_av) : ''}</p>` : ''}</section>`;
+  </dl>${d.oppdatert && !shared ? `<p class="eyebrow" style="margin-top:14px;letter-spacing:.08em;text-transform:none">Sist endret ${esc(when(d.oppdatert))}${d.oppdatert_av ? ' av ' + esc(d.oppdatert_av) : ''}</p>` : ''}</section>`;
   return html;
 }
 
-function itemRow(p, T) {
+function itemRow(p, T, shared) {
   const meta = [];
   if (p.brukes_i) meta.push('<b>' + esc(p.brukes_i) + '</b>');
   if (T.butikk && p.butikk) meta.push(esc(p.butikk));
   if (p.merknad) meta.push(esc(p.merknad));
   return `<div class="item s-${esc(p.status)}">
     <button class="st" data-act="cycle" data-id="${esc(p.id)}" aria-label="${esc(T.status)}: ${esc(p.status)}. Trykk for å endre">${esc(p.status)}<small>${esc(T.status.toUpperCase())}</small></button>
-    <button class="i-main" data-act="edit" data-id="${esc(p.id)}">
+    <button class="i-main"${shared ? ' data-act="cycle"' : ' data-act="edit"'} data-id="${esc(p.id)}">
       <span class="i-top"><span class="i-name">${esc(p.tekst)}</span>${p.mengde ? `<span class="i-qty">${esc(p.mengde)}</span>` : ''}</span>
       ${meta.length ? `<span class="i-meta">${meta.join(' · ')}</span>` : ''}
     </button></div>`;
@@ -433,6 +455,7 @@ function sheetListMenu() {
   const d = S.cur.data;
   openSheet(`<h2 class="display">${esc(d.navn)}</h2><div class="menu">
     <button class="btn" data-act="m-rename">Gi nytt navn</button>
+    <button class="btn" data-act="m-share">Del lenke (bare denne lista)</button>
     <button class="btn" data-act="m-text">Kopier som tekst (til SMS)</button>
     <button class="btn" data-act="m-reset">Sett alt tilbake til «Nei»</button>
     <button class="btn" data-act="m-cleardone">Fjern alt som er «Ja»</button>
@@ -491,8 +514,8 @@ document.addEventListener('click', async e => {
   if (act === 'skjul') { ls.set(LS.skjul, el.checked ? '1' : ''); render(); return; }
   if (el.tagName === 'A') return;
   switch (act) {
-    case 'home': if (token()) go('home'); break;
-    case 'settings': go('setup'); break;
+    case 'home': if (S.view === 'shared') { if (token()) { location.hash = ''; document.body.classList.remove('shared'); go('home'); } } else if (token()) go('home'); break;
+    case 'settings': if (S.view !== 'shared') go('setup'); break;
     case 'logout': ls.set(LS.token, ''); S.lists = {}; S.homeEtag = null; go('setup'); break;
     case 'open': go('list', el.dataset.path); break;
     case 'new': sheetNewList(); break;
@@ -511,6 +534,16 @@ document.addEventListener('click', async e => {
     case 'delitem': { const p = findP(S.cur.data, id); closeSheet(); if (p) { mutate(`fjernet ${p.tekst}`, opDel(id)); toast(`Fjernet «${p.tekst}»`); } break; }
     case 'listmenu': sheetListMenu(); break;
     case 'm-rename': sheetRename(); break;
+    case 'm-share': shareList(); break;
+    case 'm-sendback':
+      openSheet(`<h2 class="display">Send tilbake</h2><form data-form="sendback"><div class="field"><label for="sb-navn">Ditt navn</label>
+        <input id="sb-navn" type="text" name="navn" value="${esc(ls.get('lister.mittNavn'))}" required autofocus></div>
+        <p class="note">Du får en lenke med avkrysningene og tilleggene dine. Send den tilbake på SMS.</p>
+        <div class="actions"><button class="btn btn-dark" type="submit">Lag lenke</button><button class="btn" type="button" data-act="close">Avbryt</button></div></form>`);
+      break;
+    case 'm-import': importShared(); break;
+    case 'm-merge': mergeInto(); break;
+    case 'm-importnew': importNew(); break;
     case 'm-text': {
       const txt = listAsText(S.cur.data); closeSheet();
       try { await navigator.clipboard.writeText(txt); toast('Kopiert – lim inn i SMS'); }
@@ -559,6 +592,7 @@ document.addEventListener('submit', async e => {
       if (!v.tekst) return;
       ls.set('lister.sistAvd.' + S.cur.path, v.avdeling);
       const item = { id: uid(), tekst: v.tekst, mengde: '', avdeling: v.avdeling, brukes_i: '', merknad: '', butikk: '', status: 'Nei' };
+      if (S.cur.shared) { item.lokal = true; item.merknad = 'Lagt til av mottaker'; }
       mutate(`la til ${v.tekst}`, opAdd(item));
       const inp = $('form[data-form=quick] input[name=tekst]'); if (inp) inp.focus();
       break;
@@ -578,14 +612,120 @@ document.addEventListener('submit', async e => {
       catch (err) { handleErr(err); btn.disabled = false; btn.textContent = 'Opprett'; toast('Kunne ikke opprette lista'); }
       break;
     }
+    case 'sendback': ls.set('lister.mittNavn', v.navn); shareList(v.navn); break;
     case 'rename': closeSheet(); mutate(`nytt navn ${v.navn}`, d => { d.navn = v.navn; }); break;
   }
 });
 
+/* ---------- deling: hele lista ligger i lenken (#del=...), ingen nøkkel trengs ---------- */
+const b64urlE = bytes => { let bin = ''; for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000)); return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''); };
+const b64urlD = s => { s = s.replace(/-/g, '+').replace(/_/g, '/'); while (s.length % 4) s += '='; const bin = atob(s); return Uint8Array.from(bin, c => c.charCodeAt(0)); };
+async function packShare(d, fra, kilde) {
+  const obj = { v: 1, fra: fra || navn(), kilde: kilde || '', navn: d.navn, type: d.type, avdelinger: d.avdelinger,
+    punkter: d.punkter.map(p => ({ id: p.id, tekst: p.tekst, mengde: p.mengde, avdeling: p.avdeling, brukes_i: p.brukes_i, merknad: p.merknad, butikk: p.butikk, status: p.status })) };
+  const raw = new TextEncoder().encode(JSON.stringify(obj));
+  if (window.CompressionStream) {
+    const buf = await new Response(new Blob([raw]).stream().pipeThrough(new CompressionStream('deflate-raw'))).arrayBuffer();
+    return 'z' + b64urlE(new Uint8Array(buf));
+  }
+  return 'j' + b64urlE(raw);
+}
+async function unpackShare(code) {
+  const bytes = b64urlD(code.slice(1));
+  let txt;
+  if (code[0] === 'z') txt = await new Response(new Blob([bytes]).stream().pipeThrough(new DecompressionStream('deflate-raw'))).text();
+  else txt = new TextDecoder().decode(bytes);
+  return JSON.parse(txt);
+}
+async function shareList(fra) {
+  const d = S.cur.data;
+  const kilde = S.cur.shared ? S.cur.kilde : S.cur.path.replace(DIR + '/', '').replace(/\.json$/, '');
+  const url = location.origin + location.pathname + '#del=' + await packShare(d, fra, kilde);
+  closeSheet();
+  if (navigator.share) {
+    try { await navigator.share({ title: d.navn, text: d.navn, url }); return; }
+    catch (e) { if (e && e.name === 'AbortError') return; }
+  }
+  try { await navigator.clipboard.writeText(url); toast('Lenke kopiert'); }
+  catch (e) { openSheet(`<h2 class="display">Delelenke</h2><textarea rows="6" readonly>${esc(url)}</textarea><div class="actions"><button class="btn" data-act="close">Lukk</button></div>`); }
+}
+async function openShared(code) {
+  S.view = 'shared';
+  document.body.classList.add('shared');
+  try {
+    const o = await unpackShare(code);
+    const d = normalize({ navn: o.navn, type: o.type, avdelinger: o.avdelinger, punkter: o.punkter });
+    const key = 'lister.delt.' + code.slice(-24);
+    let saved = {}; try { saved = JSON.parse(ls.get(key) || '{}'); } catch (e) { }
+    (saved.extra || []).forEach(p => { if (!d.punkter.some(x => x.id === p.id)) { d.punkter.push(p); if (!d.avdelinger.includes(p.avdeling)) d.avdelinger.push(p.avdeling); } });
+    d.punkter.forEach(p => { if (saved.st && saved.st[p.id]) p.status = saved.st[p.id]; });
+    S.cur = { path: null, shared: true, key, fra: o.fra || '', kilde: o.kilde || '', data: d, pending: [] };
+  } catch (e) {
+    console.error(e);
+    $('#app').innerHTML = '<div class="empty">Lenken er ødelagt eller ufullstendig. Be om å få den sendt på nytt.</div>';
+    return;
+  }
+  render();
+}
+
+function mergeShared(d, sh) {
+  sh.punkter.forEach(p => {
+    const o = d.punkter.find(x => x.id === p.id);
+    if (!o) {
+      if (!d.avdelinger.includes(p.avdeling)) d.avdelinger.push(p.avdeling);
+      const n = Object.assign({}, p); delete n.lokal; d.punkter.push(n);
+    } else if (p.status !== 'Nei' && o.status === 'Nei') o.status = p.status;
+  });
+}
+async function importShared() {
+  const cur = S.cur, sh = cur.data, path = cur.kilde ? `${DIR}/${cur.kilde}.json` : null;
+  let orig = null;
+  if (path) { try { orig = await getFile(path); } catch (e) { if (e.status !== 404) { handleErr(e); return; } } }
+  if (orig) {
+    const nye = sh.punkter.filter(p => !orig.data.punkter.some(x => x.id === p.id)).length;
+    openSheet(`<h2 class="display">Lagre</h2><p class="note">Dette er en delt versjon av «${esc(orig.data.navn)}». ${nye} nye punkter. Avkrysninger fra ${esc(cur.fra || 'mottakeren')} tas også med.</p>
+      <div class="menu"><button class="btn btn-dark" data-act="m-merge">Slå inn i «${esc(orig.data.navn)}»</button>
+      <button class="btn" data-act="m-importnew">Lagre som ny liste</button><button class="btn" data-act="close" style="justify-content:center">Avbryt</button></div>`);
+  } else importNew();
+}
+async function importNew() {
+  const cur = S.cur; closeSheet();
+  try {
+    const navnStr = cur.data.navn + (cur.fra && cur.fra !== navn() ? ` (fra ${cur.fra})` : '');
+    const path = await createList(navnStr, cur.data.type, null);
+    const d = S.lists[path].data;
+    d.avdelinger = cur.data.avdelinger.slice();
+    d.punkter = cur.data.punkter.map(p => { const n = Object.assign({}, p); delete n.lokal; return n; });
+    S.lists[path].sha = await putFile(path, d, S.lists[path].sha, `${navn()}: importerte delt liste «${navnStr}»`);
+    leaveShared(path);
+  } catch (e) { handleErr(e); toast('Kunne ikke lagre'); }
+}
+async function mergeInto() {
+  const cur = S.cur, path = `${DIR}/${cur.kilde}.json`; closeSheet();
+  for (let i = 0; i < 3; i++) {
+    try {
+      const g = await getFile(path);
+      mergeShared(g.data, cur.data);
+      g.data.oppdatert = new Date().toISOString(); g.data.oppdatert_av = navn();
+      const sha = await putFile(path, g.data, g.sha, `${navn()}: slo inn endringer fra ${cur.fra || 'delt lenke'}`);
+      S.lists[path] = { sha, data: g.data };
+      toast('Slått sammen ✓'); leaveShared(path); return;
+    } catch (e) { if (e.status !== 409) { handleErr(e); toast('Kunne ikke slå sammen'); return; } }
+  }
+  toast('Kunne ikke slå sammen – prøv igjen');
+}
+function leaveShared(path) { document.body.classList.remove('shared'); history.replaceState(null, '', location.pathname); go('list', path); }
+
 /* ---------- start ---------- */
 function start() {
+  if (location.hash.startsWith('#del=')) { openShared(location.hash.slice(5)); return; }
   if (!token()) { go('setup'); return; }
   const h = decodeURIComponent(location.hash.replace(/^#\/?/, ''));
   if (h) go('list', `${DIR}/${h}.json`); else go('home');
 }
+window.addEventListener('hashchange', () => {
+  if (location.hash.startsWith('#del=')) { closeSheet(); openShared(location.hash.slice(5)); return; }
+  document.body.classList.remove('shared');
+  closeSheet(); start();
+});
 start();
