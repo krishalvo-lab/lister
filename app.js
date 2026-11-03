@@ -45,6 +45,8 @@ const ls = {
 const token = () => ls.get(LS.token);
 const repo = () => ls.get(LS.repo) || DEFAULT_REPO;
 const navn = () => ls.get(LS.navn) || 'App';
+const hvem = () => (LIVE || S.view === 'shared') ? (ls.get('lister.mittNavn') || 'Gjest') : navn();
+const stempel = () => ({ endret_av: hvem(), endret: new Date().toISOString() });
 
 /* ---------- helpers ---------- */
 const $ = s => document.querySelector(s);
@@ -254,10 +256,10 @@ async function flush() {
   for (;;) {
     try {
       cur.data.oppdatert = new Date().toISOString();
-      const hvem = LIVE ? (ls.get('lister.mittNavn') || 'Gjest') + ' (delt)' : navn();
-      cur.data.oppdatert_av = hvem;
+      const av = LIVE ? hvem() + ' (delt)' : hvem();
+      cur.data.oppdatert_av = av;
       const d = ops.map(o => o.desc);
-      const msg = `${hvem}: ${d.slice(0, 3).join(', ')}${d.length > 3 ? ` (+${d.length - 3})` : ''}`;
+      const msg = `${av}: ${d.slice(0, 3).join(', ')}${d.length > 3 ? ` (+${d.length - 3})` : ''}`;
       cur.sha = await putFile(cur.path, cur.data, cur.sha, msg);
       cur.etag = null;
       S.lists[cur.path] = { sha: cur.sha, data: cur.data };
@@ -296,8 +298,8 @@ document.addEventListener('visibilitychange', () => {
 /* ops */
 const findP = (d, id) => d.punkter.find(p => p.id === id);
 function ensureAvd(d, avd) { if (avd && !d.avdelinger.includes(avd)) d.avdelinger.push(avd); }
-function opAdd(item) { return d => { if (findP(d, item.id)) return; ensureAvd(d, item.avdeling); d.punkter.push(Object.assign({}, item)); }; }
-function opSet(id, fields) { return d => { const p = findP(d, id); if (!p) return; Object.assign(p, fields); ensureAvd(d, p.avdeling); }; }
+function opAdd(item) { item = Object.assign({}, item, stempel()); return d => { if (findP(d, item.id)) return; ensureAvd(d, item.avdeling); d.punkter.push(Object.assign({}, item)); }; }
+function opSet(id, fields) { fields = Object.assign({}, fields, stempel()); return d => { const p = findP(d, id); if (!p) return; Object.assign(p, fields); ensureAvd(d, p.avdeling); }; }
 function opDel(id) { return d => { d.punkter = d.punkter.filter(p => p.id !== id); }; }
 
 /* ---------- rendering ---------- */
@@ -430,6 +432,7 @@ function itemRow(p, T, shared) {
   if (p.brukes_i) meta.push('<b>' + esc(p.brukes_i) + '</b>');
   if (T.butikk && p.butikk) meta.push(esc(p.butikk));
   if (p.merknad) meta.push(esc(p.merknad));
+  if (p.endret_av) meta.push(`<span class="who">${esc(p.endret_av)}${p.endret ? ' · ' + esc(when(p.endret)) : ''}</span>`);
   return `<div class="item s-${esc(p.status)}">
     <button class="st" data-act="cycle" data-id="${esc(p.id)}" aria-label="${esc(T.status)}: ${esc(p.status)}. Trykk for å endre">${esc(p.status)}<small>${esc(T.status.toUpperCase())}</small></button>
     <button class="i-main"${shared ? ' data-act="cycle"' : ' data-act="edit"'} data-id="${esc(p.id)}">
@@ -594,7 +597,7 @@ document.addEventListener('click', async e => {
       catch (err) { openSheet(`<h2 class="display">Kopier</h2><textarea rows="12" readonly>${esc(txt)}</textarea><div class="actions"><button class="btn" data-act="close">Lukk</button></div>`); }
       break;
     }
-    case 'm-reset': closeSheet(); mutate('alt tilbake til Nei', d => d.punkter.forEach(p => { p.status = 'Nei'; })); break;
+    case 'm-reset': { closeSheet(); const st = stempel(); mutate('alt tilbake til Nei', d => d.punkter.forEach(p => { if (p.status !== 'Nei') Object.assign(p, { status: 'Nei' }, st); })); break; }
     case 'm-cleardone': closeSheet(); mutate('fjernet alt som var Ja', d => { d.punkter = d.punkter.filter(p => p.status !== 'Ja'); }); break;
     case 'm-copy': sheetNewList({ navn: S.cur.data.navn + ' (kopi)', type: S.cur.data.type, copyOf: S.cur.path }); break;
     case 'm-archive': { const a = !S.cur.data.arkivert; closeSheet(); mutate(a ? 'arkivert' : 'hentet fra arkiv', d => { d.arkivert = a; }); toast(a ? 'Arkivert' : 'Hentet fra arkivet'); break; }
@@ -718,8 +721,8 @@ function mergeShared(d, sh) {
     const o = d.punkter.find(x => x.id === p.id);
     if (!o) {
       if (!d.avdelinger.includes(p.avdeling)) d.avdelinger.push(p.avdeling);
-      const n = Object.assign({}, p); delete n.lokal; d.punkter.push(n);
-    } else if (p.status !== 'Nei' && o.status === 'Nei') o.status = p.status;
+      const n = Object.assign({}, p, { endret_av: sh.fra || 'Delt lenke', endret: new Date().toISOString() }); delete n.lokal; d.punkter.push(n);
+    } else if (p.status !== 'Nei' && o.status === 'Nei') Object.assign(o, { status: p.status, endret_av: sh.fra || 'Delt lenke', endret: new Date().toISOString() });
   });
 }
 async function importShared() {
@@ -750,7 +753,7 @@ async function mergeInto() {
   for (let i = 0; i < 3; i++) {
     try {
       const g = await getFile(path);
-      mergeShared(g.data, cur.data);
+      mergeShared(g.data, Object.assign({}, cur.data, { fra: cur.fra }));
       g.data.oppdatert = new Date().toISOString(); g.data.oppdatert_av = navn();
       const sha = await putFile(path, g.data, g.sha, `${navn()}: slo inn endringer fra ${cur.fra || 'delt lenke'}`);
       S.lists[path] = { sha, data: g.data };
