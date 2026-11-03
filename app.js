@@ -5,6 +5,9 @@
 const API = 'https://api.github.com';
 const LS = { token: 'lister.token', repo: 'lister.repo', navn: 'lister.navn', skjul: 'lister.skjulFerdige' };
 const DEFAULT_REPO = 'krishalvo-lab/lister-data';
+// URL til delings-Workeren (worker/worker.js). Tom = live-deling av.
+const WORKER = window.LISTER_WORKER || '';
+let LIVE = null; // { id, kode } når lista er åpnet via live-delelenke
 const DIR = 'lister';
 const STATUSES = ['Nei', 'Ja', 'Usikker'];
 const POLL_LIST_MS = 12000;
@@ -101,7 +104,19 @@ async function gh(path, opts = {}) {
 }
 class HttpError extends Error { constructor(status, msg) { super(msg || ('HTTP ' + status)); this.status = status; } }
 
+async function wFetch(method, body, etag) {
+  const u = `${WORKER.replace(/\/$/, '')}/liste/${LIVE.id}` + (method === 'GET' ? `?k=${encodeURIComponent(LIVE.kode)}` : '');
+  const h = {}; if (etag) h['If-None-Match'] = etag; if (body) h['Content-Type'] = 'application/json';
+  return fetch(u, { method, headers: h, body: body ? JSON.stringify(body) : undefined, cache: 'no-store' });
+}
 async function getFile(path, etag) {
+  if (LIVE) {
+    const r = await wFetch('GET', null, etag);
+    if (r.status === 304) return { notModified: true };
+    if (!r.ok) throw new HttpError(r.status);
+    const j = await r.json();
+    return { sha: j.sha, etag: r.headers.get('ETag'), data: normalize(j.data) };
+  }
   const r = await gh(`/repos/${repo()}/contents/${encPath(path)}`, etag ? { headers: { 'If-None-Match': etag } } : {});
   if (r.status === 304) return { notModified: true };
   if (!r.ok) throw new HttpError(r.status);
@@ -109,6 +124,12 @@ async function getFile(path, etag) {
   return { sha: j.sha, etag: r.headers.get('ETag'), data: normalize(JSON.parse(b64d(j.content))) };
 }
 async function putFile(path, data, sha, message) {
+  if (LIVE) {
+    const r = await wFetch('PUT', { k: LIVE.kode, sha, data, message });
+    if (r.status === 409) throw new HttpError(409, 'konflikt');
+    if (!r.ok) throw new HttpError(r.status);
+    return (await r.json()).sha;
+  }
   const body = { message, content: b64e(JSON.stringify(data, null, 2) + '\n') };
   if (sha) body.sha = sha;
   const r = await gh(`/repos/${repo()}/contents/${encPath(path)}`, { method: 'PUT', body: JSON.stringify(body) });
@@ -148,6 +169,11 @@ async function loadHome(force) {
 
 function handleErr(e) {
   console.error(e);
+  if (LIVE && e && (e.status === 403 || e.status === 404)) {
+    clearTimeout(S.pollTimer); S.view = 'stopped';
+    $('#app').innerHTML = '<div class="empty" style="margin-top:20px"><b>Delingen er stoppet.</b><br>Lista er ikke lenger delt med deg.</div>';
+    setSync(''); return;
+  }
   if (e && e.status === 401) { setSync('Nøkkelen virker ikke', true); go('setup'); return; }
   if (e && (e.status === 403 || e.status === 404)) { setSync('Ingen tilgang til ' + repo(), true); return; }
   setSync('Frakoblet – prøver igjen', true);
@@ -161,7 +187,7 @@ function go(view, path) {
     const cached = S.lists[path];
     S.cur = { path, sha: cached ? cached.sha : null, etag: null, data: cached ? cached.data : null, pending: [] };
     const h = '#/' + encodeURIComponent(path.replace(DIR + '/', '').replace(/\.json$/, ''));
-    if (location.hash !== h) history.replaceState(null, '', h);
+    if (!LIVE && location.hash !== h) history.replaceState(null, '', h);
     render();
     refreshList();
   } else {
@@ -196,6 +222,7 @@ async function refreshList() {
     } catch (e) {
       if (e.status === 404) { toast('Lista finnes ikke lenger'); go('home'); return; }
       handleErr(e);
+      if (S.view === 'stopped') return;
       if (!cur.data) render();
     }
   }
@@ -227,9 +254,10 @@ async function flush() {
   for (;;) {
     try {
       cur.data.oppdatert = new Date().toISOString();
-      cur.data.oppdatert_av = navn();
+      const hvem = LIVE ? (ls.get('lister.mittNavn') || 'Gjest') + ' (delt)' : navn();
+      cur.data.oppdatert_av = hvem;
       const d = ops.map(o => o.desc);
-      const msg = `${navn()}: ${d.slice(0, 3).join(', ')}${d.length > 3 ? ` (+${d.length - 3})` : ''}`;
+      const msg = `${hvem}: ${d.slice(0, 3).join(', ')}${d.length > 3 ? ` (+${d.length - 3})` : ''}`;
       cur.sha = await putFile(cur.path, cur.data, cur.sha, msg);
       cur.etag = null;
       S.lists[cur.path] = { sha: cur.sha, data: cur.data };
@@ -361,7 +389,7 @@ function viewList() {
       <div class="tools"><label><input type="checkbox" data-act="skjul"${skjul ? ' checked' : ''}> Skjul det som er ${T === TYPES.handleliste ? 'kjøpt' : 'ferdig'}</label></div>`
       + listBody(d, T, order, skjul, c, true);
   }
-  let html = `<div class="l-head"><div class="t"><p class="eyebrow">${esc(T.label)}</p><h1 class="display">${esc(d.navn)}</h1></div>
+  let html = `<div class="l-head"><div class="t"><p class="eyebrow">${esc(T.label)}${LIVE ? ' · delt med deg' : (d.del_kode ? ' · delt' : '')}</p><h1 class="display">${esc(d.navn)}</h1></div>
     <button class="icon-btn" data-act="listmenu" aria-label="Flere valg"><svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg></button></div>
   <form class="quick" data-form="quick">
     <input type="text" name="tekst" placeholder="Legg til ${esc(T.tekst.toLowerCase())}…" autocomplete="off" enterkeyhint="done" aria-label="Ny ${esc(T.tekst.toLowerCase())}">
@@ -453,9 +481,20 @@ function sheetNewList(prefill) {
 
 function sheetListMenu() {
   const d = S.cur.data;
+  if (LIVE) {
+    openSheet(`<h2 class="display">${esc(d.navn)}</h2><div class="menu">
+      <button class="btn" data-act="m-guestname">Endre navnet ditt (${esc(ls.get('lister.mittNavn') || 'Gjest')})</button>
+      <button class="btn" data-act="m-text">Kopier som tekst (til SMS)</button>
+      <button class="btn" data-act="m-reset">Sett alt tilbake til «Nei»</button>
+      <button class="btn" data-act="m-cleardone">Fjern alt som er «Ja»</button>
+      <button class="btn" data-act="close" style="justify-content:center">Lukk</button></div>`);
+    return;
+  }
   openSheet(`<h2 class="display">${esc(d.navn)}</h2><div class="menu">
+    ${WORKER ? `<button class="btn btn-yellow" data-act="m-live">${d.del_kode ? 'Send live-lenken på nytt' : 'Del live (redigerer samme liste)'}</button>` : ''}
+    ${d.del_kode ? '<button class="btn btn-danger" data-act="m-stopshare">Stopp deling</button>' : ''}
     <button class="btn" data-act="m-rename">Gi nytt navn</button>
-    <button class="btn" data-act="m-share">Del lenke (bare denne lista)</button>
+    <button class="btn" data-act="m-share">${WORKER ? 'Del kopi (mottakeren får sin egen)' : 'Del lenke (bare denne lista)'}</button>
     <button class="btn" data-act="m-text">Kopier som tekst (til SMS)</button>
     <button class="btn" data-act="m-reset">Sett alt tilbake til «Nei»</button>
     <button class="btn" data-act="m-cleardone">Fjern alt som er «Ja»</button>
@@ -514,8 +553,9 @@ document.addEventListener('click', async e => {
   if (act === 'skjul') { ls.set(LS.skjul, el.checked ? '1' : ''); render(); return; }
   if (el.tagName === 'A') return;
   switch (act) {
-    case 'home': if (S.view === 'shared') { if (token()) { location.hash = ''; document.body.classList.remove('shared'); go('home'); } } else if (token()) go('home'); break;
-    case 'settings': if (S.view !== 'shared') go('setup'); break;
+    case 'home': if (LIVE) { if (token()) { LIVE = null; document.body.classList.remove('shared'); history.replaceState(null, '', location.pathname); go('home'); } break; }
+      if (S.view === 'shared') { if (token()) { location.hash = ''; document.body.classList.remove('shared'); go('home'); } } else if (token()) go('home'); break;
+    case 'settings': if (S.view !== 'shared' && !LIVE) go('setup'); break;
     case 'logout': ls.set(LS.token, ''); S.lists = {}; S.homeEtag = null; go('setup'); break;
     case 'open': go('list', el.dataset.path); break;
     case 'new': sheetNewList(); break;
@@ -535,6 +575,10 @@ document.addEventListener('click', async e => {
     case 'listmenu': sheetListMenu(); break;
     case 'm-rename': sheetRename(); break;
     case 'm-share': shareList(); break;
+    case 'm-live': shareLive(); break;
+    case 'm-stopshare': sheetConfirm('Stoppe deling?', 'Live-lenken slutter å virke med en gang. Lista blir liggende hos deg som før.', 'm-stopshare-yes', 'Stopp deling'); break;
+    case 'm-stopshare-yes': closeSheet(); mutate('stoppet deling', d => { delete d.del_kode; }); toast('Deling stoppet'); break;
+    case 'm-guestname': askGuestName(false); break;
     case 'm-sendback':
       openSheet(`<h2 class="display">Send tilbake</h2><form data-form="sendback"><div class="field"><label for="sb-navn">Ditt navn</label>
         <input id="sb-navn" type="text" name="navn" value="${esc(ls.get('lister.mittNavn'))}" required autofocus></div>
@@ -613,6 +657,7 @@ document.addEventListener('submit', async e => {
       break;
     }
     case 'sendback': ls.set('lister.mittNavn', v.navn); shareList(v.navn); break;
+    case 'guestname': ls.set('lister.mittNavn', v.navn); closeSheet(); toast('Hei, ' + v.navn); break;
     case 'rename': closeSheet(); mutate(`nytt navn ${v.navn}`, d => { d.navn = v.navn; }); break;
   }
 });
@@ -716,9 +761,41 @@ async function mergeInto() {
 }
 function leaveShared(path) { document.body.classList.remove('shared'); history.replaceState(null, '', location.pathname); go('list', path); }
 
+/* ---------- live-deling via Worker ---------- */
+function liveUrl(id, kode) { return location.origin + location.pathname + `#d/${id}/${kode}`; }
+function newKode() { const a = new Uint8Array(18); crypto.getRandomValues(a); return b64urlE(a); }
+async function waitSaved() { for (let i = 0; i < 40 && (S.saving || (S.cur && S.cur.pending.length)); i++) { if (!S.saving) flush(); await new Promise(r => setTimeout(r, 250)); } }
+async function shareLive() {
+  const cur = S.cur; closeSheet();
+  if (!cur.data.del_kode) { const k = newKode(); mutate('delte lista live', d => { if (!d.del_kode) d.del_kode = k; }); }
+  await waitSaved();
+  if (cur.pending.length || !cur.data.del_kode) { toast('Fikk ikke lagret – prøv igjen'); return; }
+  const id = cur.path.replace(DIR + '/', '').replace(/\.json$/, '');
+  const url = liveUrl(id, cur.data.del_kode);
+  if (navigator.share) { try { await navigator.share({ title: cur.data.navn, text: cur.data.navn, url }); return; } catch (e) { if (e && e.name === 'AbortError') return; } }
+  try { await navigator.clipboard.writeText(url); toast('Live-lenke kopiert'); }
+  catch (e) { openSheet(`<h2 class="display">Live-lenke</h2><textarea rows="5" readonly>${esc(url)}</textarea><div class="actions"><button class="btn" data-act="close">Lukk</button></div>`); }
+}
+function askGuestName(first) {
+  openSheet(`<h2 class="display">${first ? 'Hei!' : 'Navnet ditt'}</h2><form data-form="guestname">
+    <div class="field"><label for="g-navn">Hva heter du? Det vises når du endrer noe.</label><input id="g-navn" type="text" name="navn" value="${esc(ls.get('lister.mittNavn'))}" required autofocus></div>
+    <div class="actions"><button class="btn btn-dark" type="submit">OK</button>${first ? '<button class="btn" type="button" data-act="close">Hopp over</button>' : ''}</div></form>`);
+}
+function openLive(id, kode) {
+  LIVE = { id, kode };
+  document.body.classList.add('shared');
+  S.view = 'list';
+  S.cur = { path: `${DIR}/${id}.json`, sha: null, etag: null, data: null, pending: [] };
+  render(); refreshList();
+  if (!ls.get('lister.mittNavn')) askGuestName(true);
+}
+
 /* ---------- start ---------- */
 function start() {
   if (location.hash.startsWith('#del=')) { openShared(location.hash.slice(5)); return; }
+  const lm = location.hash.match(/^#d\/([a-z0-9-]+)\/([A-Za-z0-9_-]{16,})$/);
+  if (lm) { openLive(lm[1], lm[2]); return; }
+  LIVE = null;
   if (!token()) { go('setup'); return; }
   const h = decodeURIComponent(location.hash.replace(/^#\/?/, ''));
   if (h) go('list', `${DIR}/${h}.json`); else go('home');
