@@ -1,6 +1,6 @@
 # Lister – overlevering til Claude Code
 
-Kristians egen app for handlelister, huskelister og pakkelister. Den er bygget 3. nov. 2026 i en Claude-økt.
+Kristians egen app for handlelister, huskelister, pakkelister og ønskelister. Den er bygget 3. nov. 2026 i en Claude-økt.
 Brukere: Kristian, kjæresten Iris og alle de deler lister med. Alle har iPhone. Kristian bruker også en Windows-PC (MSI).
 
 ## Arkitektur
@@ -29,7 +29,7 @@ Brukere: Kristian, kjæresten Iris og alle de deler lister med. Alle har iPhone.
 
 ## Funksjoner (alle testet med Playwright)
 
-- **Listetyper:** handleliste (avdelinger i rekkefølge gjennom butikken, felt for butikk), huskeliste og pakkeliste.
+- **Listetyper:** handleliste (avdelinger i rekkefølge gjennom butikken, felt for butikk), huskeliste, pakkeliste og ønskeliste (prioritet som gruppe, lenke i merknad blir «Åpne ↗»-knapp).
 - **Punkt:** status Nei/Ja/Usikker (trykk for å bytte), vare, mengde, brukes i, merknad og butikk. Punktene grupperes etter avdeling, og oppsummeringen nederst viser totalt, ferdig, mangler og usikker.
 - **Endringshistorikk:** hvert punkt lagrer `endret_av` og `endret` og viser «Navn · tid siden».
 - **Legge til:** hurtigfelt med avdeling, eller fullt skjema. Punkter kan endres og fjernes.

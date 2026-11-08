@@ -121,3 +121,6 @@ body.shared [data-act=settings]{display:none}
 .chip[aria-pressed=true]{background:var(--ink);border-color:var(--ink);color:var(--ground)}
 .seg5{grid-template-columns:repeat(5,1fr)}
 .seg5 button{font-size:13px;padding:0 2px}
+.seg2{grid-template-columns:repeat(2,1fr)}
+.i-link{flex:none;display:flex;align-items:center;justify-content:center;min-width:64px;min-height:44px;padding:0 10px;border-left:1px solid #ECE8E0;font-weight:600;font-size:13px;color:var(--ink);text-decoration:none;white-space:nowrap}
+.i-link:active{background:var(--ground)}
