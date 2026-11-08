@@ -27,10 +27,13 @@ const TYPES = {
   onskeliste: {
     label: 'Ønskeliste', flertall: 'Ønskelister', status: 'Kjøpt', gruppe: 'Prioritet', tekst: 'Ønske', butikk: false, ferdig: 'kjøpt',
     mengde: 'Antall', brukes: false, merknad: 'Størrelse, farge eller lenke', forvalg: 'Gjerne',
+    statuser: ['Nei', 'Ja'], etikett: { Nei: 'Ledig', Ja: 'Kjøpt' },
     avd: ['Ønsker meg mest', 'Gjerne', 'Småting']
   }
 };
 const ferdigOrd = T => T.ferdig || 'ferdig';
+const stOf = T => T.statuser || STATUSES;
+const lab = (T, s) => (T.etikett && T.etikett[s]) || s;
 const URL_RE = /https?:\/\/[^\s]+/i;
 const typeOf = d => TYPES[d && d.type] || TYPES.huskeliste;
 const KATEGORIER = ['Mat', 'Bygg', 'Hjem', 'Reise', 'Annet'];
@@ -452,9 +455,10 @@ function listBody(d, T, order, skjul, c, shared) {
 
   html += `<section class="sum"><h2 class="display">Oppsummering${filt ? ' – ' + esc(filt === '__uten' ? 'uten butikk' : filt) : ''}</h2><dl>
     <dt>Antall ${T === TYPES.handleliste ? 'varer' : T === TYPES.onskeliste ? 'ønsker' : 'punkter'} totalt</dt><dd>${c.tot}</dd>
-    <dt><span class="pill" style="background:var(--ja)"></span>Ferdig</dt><dd>${c.Ja}</dd>
+    ${T.etikett ? `<dt><span class="pill" style="background:var(--nei)"></span>${esc(lab(T, 'Nei'))}</dt><dd>${c.Nei + c.Usikker}</dd>
+    <dt><span class="pill" style="background:var(--ja)"></span>${esc(lab(T, 'Ja'))}</dt><dd>${c.Ja}</dd>` : `<dt><span class="pill" style="background:var(--ja)"></span>Ferdig</dt><dd>${c.Ja}</dd>
     <dt><span class="pill" style="background:var(--nei)"></span>Mangler</dt><dd>${c.Nei}</dd>
-    <dt><span class="pill" style="background:var(--usikker)"></span>Usikker${T === TYPES.handleliste ? ' (sjekk hjemme)' : ''}</dt><dd>${c.Usikker}</dd>
+    <dt><span class="pill" style="background:var(--usikker)"></span>Usikker${T === TYPES.handleliste ? ' (sjekk hjemme)' : ''}</dt><dd>${c.Usikker}</dd>`}
   </dl>${d.oppdatert && !shared ? `<p class="eyebrow" style="margin-top:14px;letter-spacing:.08em;text-transform:none">Sist endret ${esc(when(d.oppdatert))}${d.oppdatert_av ? ' av ' + esc(d.oppdatert_av) : ''}</p>` : ''}</section>`;
   return html;
 }
@@ -469,7 +473,7 @@ function itemRow(p, T, shared, visAvd) {
   if (mtekst) meta.push(esc(mtekst));
   if (p.endret_av) meta.push(`<span class="who">${esc(p.endret_av)}${p.endret ? ' · ' + esc(when(p.endret)) : ''}</span>`);
   return `<div class="item s-${esc(p.status)}">
-    <button class="st" data-act="cycle" data-id="${esc(p.id)}" aria-label="${esc(T.status)}: ${esc(p.status)}. Trykk for å endre">${esc(p.status)}<small>${esc(T.status.toUpperCase())}</small></button>
+    <button class="st" data-act="cycle" data-id="${esc(p.id)}" aria-label="${esc(T.status)}: ${esc(lab(T, p.status))}. Trykk for å endre">${esc(lab(T, p.status))}${T.etikett ? '' : `<small>${esc(T.status.toUpperCase())}</small>`}</button>
     <button class="i-main"${shared ? ' data-act="cycle"' : ' data-act="edit"'} data-id="${esc(p.id)}">
       <span class="i-top"><span class="i-name">${esc(p.tekst)}</span>${p.mengde ? `<span class="i-qty">${esc(p.mengde)}</span>` : ''}</span>
       ${meta.length ? `<span class="i-meta">${meta.join(' · ')}</span>` : ''}
@@ -488,7 +492,7 @@ function sheetItem(p) {
   const butikker = [...new Set(Object.values(S.lists).flatMap(l => (l.data.punkter || []).map(x => x.butikk)).filter(Boolean))];
   openSheet(`<h2 class="display">${isNew ? 'Legg til' : 'Endre'}</h2>
   <form data-form="item" data-id="${esc(p.id)}">
-    <div class="field"><label>${esc(T.status)}</label><div class="seg">${STATUSES.map(s => `<button type="button" class="v-${s}" data-act="seg" data-val="${s}" aria-pressed="${p.status === s}">${s}</button>`).join('')}</div>
+    <div class="field"><label>${esc(T.status)}</label><div class="seg${stOf(T).length === 2 ? ' seg2' : ''}">${stOf(T).map(s => `<button type="button" class="v-${s}" data-act="seg" data-val="${s}" aria-pressed="${p.status === s}">${esc(lab(T, s))}</button>`).join('')}</div>
       <input type="hidden" name="status" value="${esc(p.status)}"></div>
     <div class="field"><label for="i-tekst">${esc(T.tekst)}</label><input id="i-tekst" type="text" name="tekst" value="${esc(p.tekst)}" required${isNew ? ' autofocus' : ''}></div>
     <div class="row2">
@@ -514,7 +518,7 @@ function sheetNewList(prefill) {
       <input type="hidden" name="status" value="${t}"></div>
     <div class="field"><label>Kategori</label><div class="seg seg5">${KATEGORIER.map(x => `<button type="button" class="v-type" data-act="seg" data-val="${x}" aria-pressed="${x === ((prefill && prefill.kategori) || '')}">${x}</button>`).join('')}</div>
       <input type="hidden" name="kategori" value="${(prefill && prefill.kategori) || ''}"></div>
-    ${prefill && prefill.copyOf ? `<input type="hidden" name="copyOf" value="${esc(prefill.copyOf)}"><p class="note">Alle punkter kopieres og settes til «Nei».</p>` : ''}
+    ${prefill && prefill.copyOf ? `<input type="hidden" name="copyOf" value="${esc(prefill.copyOf)}"><p class="note">Alle punkter kopieres og settes til «${esc(lab(TYPES[t] || TYPES.huskeliste, 'Nei'))}».</p>` : ''}
     <div class="actions"><button class="btn btn-dark" type="submit">Opprett</button><button class="btn" type="button" data-act="close">Avbryt</button></div>
   </form>`);
 }
@@ -525,7 +529,7 @@ function sheetListMenu() {
     openSheet(`<h2 class="display">${esc(d.navn)}</h2><div class="menu">
       <button class="btn" data-act="m-guestname">Endre navnet ditt (${esc(ls.get('lister.mittNavn') || 'Gjest')})</button>
       <button class="btn" data-act="m-text">Kopier som tekst (til SMS)</button>
-      <button class="btn" data-act="m-reset">Sett alt tilbake til «Nei»</button>
+      <button class="btn" data-act="m-reset">Sett alt tilbake til «${esc(lab(typeOf(S.cur.data), 'Nei'))}»</button>
       <button class="btn" data-act="m-cleardone">Fjern alt som er «Ja»</button>
       <button class="btn" data-act="close" style="justify-content:center">Lukk</button></div>`);
     return;
@@ -537,7 +541,7 @@ function sheetListMenu() {
     <button class="btn" data-act="m-kat">Kategori: ${esc(katOf(d) || 'ikke valgt')}</button>
     <button class="btn" data-act="m-share">${WORKER ? 'Del kopi (mottakeren får sin egen)' : 'Del lenke (bare denne lista)'}</button>
     <button class="btn" data-act="m-text">Kopier som tekst (til SMS)</button>
-    <button class="btn" data-act="m-reset">Sett alt tilbake til «Nei»</button>
+    <button class="btn" data-act="m-reset">Sett alt tilbake til «${esc(lab(typeOf(S.cur.data), 'Nei'))}»</button>
     <button class="btn" data-act="m-cleardone">Fjern alt som er «Ja»</button>
     <button class="btn" data-act="m-copy">Lag kopi av lista</button>
     <button class="btn" data-act="m-archive">${d.arkivert ? 'Hent fra arkivet' : 'Arkiver'}</button>
@@ -607,8 +611,8 @@ document.addEventListener('click', async e => {
     }
     case 'cycle': {
       const p = findP(S.cur.data, id); if (!p) return;
-      const next = STATUSES[(STATUSES.indexOf(p.status) + 1) % STATUSES.length];
-      mutate(`${p.tekst} → ${next}`, opSet(id, { status: next })); break;
+      const L = stOf(typeOf(S.cur.data)), next = L[(L.indexOf(p.status) + 1) % L.length];
+      mutate(`${p.tekst} → ${lab(typeOf(S.cur.data), next)}`, opSet(id, { status: next })); break;
     }
     case 'edit': sheetItem(findP(S.cur.data, id)); break;
     case 'additem': sheetItem(null); break;
@@ -858,3 +862,20 @@ window.addEventListener('hashchange', () => {
   closeSheet(); start();
 });
 start();
+
+/* ---------- ny versjon: last på nytt når index.html peker på en nyere app.js ---------- */
+async function sjekkVersjon() {
+  try {
+    const mine = (document.querySelector('script[src*="app.js"]').getAttribute('src').match(/v=(\d+)/) || [])[1];
+    if (!mine || location.protocol === 'file:') return;
+    const html = await (await fetch(location.pathname, { cache: 'reload' })).text();
+    const ny = (html.match(/app\.js\?v=(\d+)/) || [])[1];
+    if (!ny || ny === mine) return;
+    if (sessionStorage.getItem('lister.lastet') === ny) return; // unngå løkke
+    if (S.saving || (S.cur && S.cur.pending && S.cur.pending.length) || !$('#sheet').hidden) return; // ikke midt i en endring
+    sessionStorage.setItem('lister.lastet', ny);
+    location.reload();
+  } catch (e) { }
+}
+sjekkVersjon();
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') sjekkVersjon(); });

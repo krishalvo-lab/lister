@@ -93,6 +93,10 @@ async function handler(route){
   console.log('ønske-skjema: brukes_i synlig =', await pg.isVisible('#i-brukes'), '| mengde-label =', await pg.textContent('label[for=i-mengde]'));
   await pg.click('form[data-form=item] button[type=submit]'); await pg.waitForSelector('.i-link');
   console.log('lenke:', await pg.getAttribute('.i-link','href'), '| meta:', await pg.textContent('.item .i-meta'));
+  console.log('ønske-status før:', await pg.textContent('.item .st'));
+  await pg.click('.item .st'); await pg.waitForTimeout(1200);
+  console.log('ønske-status etter:', await pg.textContent('.item .st'), '| oppsummering:', (await pg.$$eval('.sum dt',e=>e.map(x=>x.textContent.trim()))).join(', '));
+  await pg.click('.item .st'); await pg.waitForTimeout(300); console.log('ønske-status tredje trykk:', await pg.textContent('.item .st'));
   await pg.click('.item .st'); await pg.waitForTimeout(1200);
   const w=JSON.parse(store['lister/kristian-jul.json'].content); console.log('ønskefil:', w.type, w.punkter.map(p=>p.tekst+':'+p.status+':'+p.avdeling).join(', '), '| skjul-tekst:', await pg.textContent('.tools label'));
   await pg.screenshot({path:require('path').join(__dirname,'out-8-onske.png'),fullPage:true});
