@@ -33,9 +33,9 @@ async function handler(route){
   await ctx.route('https://fonts.googleapis.com/**',r=>r.fulfill({status:200,body:''}));
   const pg=await ctx.newPage(); const errs=[]; pg.on('pageerror',e=>errs.push(e.message)); pg.on('console',m=>{if(m.type()==='error')errs.push(m.text())});
   await pg.goto('http://localhost:8765/');
-  await pg.screenshot({path:require('path').join(__dirname,'out-1-setup.png'});
+  await pg.screenshot({path:require('path').join(__dirname,'out-1-setup.png')});
   await pg.fill('#f-navn','Kristian'); await pg.fill('#f-token','good'); await pg.click('button[type=submit]');
-  await pg.waitForSelector('.card'); await pg.screenshot({path:require('path').join(__dirname,'out-2-home.png'});
+  await pg.waitForSelector('.card'); await pg.screenshot({path:require('path').join(__dirname,'out-2-home.png')});
   await pg.click('.card'); await pg.waitForSelector('.item');
   // quick add
   await pg.fill('form[data-form=quick] input[name=tekst]','Rømme'); await pg.selectOption('form[data-form=quick] select','Annet'); await pg.press('form[data-form=quick] input[name=tekst]','Enter');
@@ -52,8 +52,8 @@ async function handler(route){
   const shown=await pg.$$eval('.i-name',e=>e.map(x=>x.textContent)); console.log('shown:',shown.join(', '));
   // edit sheet
   await pg.click('.item:has-text("Rømme") .i-main'); await pg.fill('#i-mengde','2 bokser'); await pg.fill('#i-butikk','Kiwi'); 
-  await pg.screenshot({path:require('path').join(__dirname,'out-3-edit.png'}); await pg.click('form[data-form=item] button[type=submit]');
-  await pg.waitForTimeout(1200); await pg.screenshot({path:require('path').join(__dirname,'out-4-list.png',fullPage:true});
+  await pg.screenshot({path:require('path').join(__dirname,'out-3-edit.png')}); await pg.click('form[data-form=item] button[type=submit]');
+  await pg.waitForTimeout(1200); await pg.screenshot({path:require('path').join(__dirname,'out-4-list.png'),fullPage:true});
 
   // --- share flow ---
   await pg.click('[data-act=listmenu]'); 
@@ -68,7 +68,7 @@ async function handler(route){
   await p2.fill('form[data-form=quick] input[name=tekst]','Lime'); await p2.selectOption('form[data-form=quick] select','Frukt og grønt'); await p2.press('form[data-form=quick] input[name=tekst]','Enter');
   await p2.reload(); await p2.waitForSelector('.item');
   console.log('recipient after reload:', (await p2.$$eval('.item',e=>e.map(x=>x.querySelector('.i-name').textContent+':'+x.querySelector('.st').childNodes[0].textContent))).join(', '));
-  await p2.screenshot({path:require('path').join(__dirname,'out-6-shared.png',fullPage:true});
+  await p2.screenshot({path:require('path').join(__dirname,'out-6-shared.png'),fullPage:true});
   await p2.evaluate(()=>{ navigator.share=undefined; navigator.clipboard.writeText=async(t)=>{window.__copied=t;}; });
   await p2.click('[data-act=m-sendback]'); await p2.fill('#sb-navn','Mamma'); await p2.click('form[data-form=sendback] button[type=submit]'); await p2.waitForTimeout(500);
   const back=await p2.evaluate(()=>window.__copied); console.log('api hits from recipient',apiHits);
@@ -80,11 +80,23 @@ async function handler(route){
   console.log('after merge:',d.punkter.map(p=>p.tekst+':'+p.status+(p.merknad?'('+p.merknad+')':'')).join(', '), '| msg', global.lastMsg, '| url', pg.url());
   // new huskeliste
   await pg.click('[data-act=home]'); await pg.waitForSelector('.card'); await pg.click('text=+ Ny liste');
-  await pg.fill('#n-navn','Hytta – før vinter'); await pg.click('.seg button:has-text("Huskeliste")'); await pg.click('form[data-form=newlist] button[type=submit]');
+  await pg.fill('#n-navn','Hytta – før vinter'); await pg.click('.seg button:has-text("Huskeliste")'); await pg.click('.seg5 button:has-text("Hjem")'); await pg.click('form[data-form=newlist] button[type=submit]');
   await pg.waitForSelector('form[data-form=quick]'); await pg.fill('form[data-form=quick] input[name=tekst]','Tappe ut vann'); await pg.press('form[data-form=quick] input[name=tekst]','Enter');
   await pg.waitForTimeout(1200);
   console.log('files:',Object.keys(store).join(', '));
-  await pg.click('[data-act=home]'); await pg.waitForTimeout(800); await pg.screenshot({path:require('path').join(__dirname,'out-5-home.png'});
+  // ønskeliste
+  await pg.click('[data-act=home]'); await pg.waitForSelector('.card'); await pg.click('text=+ Ny liste');
+  await pg.fill('#n-navn','Kristian – jul'); await pg.click('.seg button:has-text("Ønskeliste")'); await pg.click('.seg5 button:has-text("Annet")'); await pg.click('form[data-form=newlist] button[type=submit]');
+  await pg.waitForSelector('form[data-form=quick]');
+  console.log('ønske grupper:', await pg.$$eval('form[data-form=quick] option',o=>o.map(x=>x.textContent+(x.selected?'*':'')).join(', ')));
+  await pg.click('[data-act=additem]'); await pg.fill('#i-tekst','Løpejakke'); await pg.fill('#i-merknad','str L, svart https://www.xxl.no/jakke-123');
+  console.log('ønske-skjema: brukes_i synlig =', await pg.isVisible('#i-brukes'), '| mengde-label =', await pg.textContent('label[for=i-mengde]'));
+  await pg.click('form[data-form=item] button[type=submit]'); await pg.waitForSelector('.i-link');
+  console.log('lenke:', await pg.getAttribute('.i-link','href'), '| meta:', await pg.textContent('.item .i-meta'));
+  await pg.click('.item .st'); await pg.waitForTimeout(1200);
+  const w=JSON.parse(store['lister/kristian-jul.json'].content); console.log('ønskefil:', w.type, w.punkter.map(p=>p.tekst+':'+p.status+':'+p.avdeling).join(', '), '| skjul-tekst:', await pg.textContent('.tools label'));
+  await pg.screenshot({path:require('path').join(__dirname,'out-8-onske.png'),fullPage:true});
+  await pg.click('[data-act=home]'); await pg.waitForTimeout(800); await pg.screenshot({path:require('path').join(__dirname,'out-5-home.png')});
   console.log('puts',putCount,'errors',JSON.stringify(errs));
   await b.close();
 })();

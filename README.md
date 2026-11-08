@@ -1,6 +1,6 @@
 # Lister
 
-Handlelister, huskelister og pakkelister for husstanden: https://krishalvo-lab.github.io/lister/
+Handlelister, huskelister, pakkelister og ønskelister for husstanden: https://krishalvo-lab.github.io/lister/
 
 - Statisk side (HTML/CSS/JS uten byggesteg) på GitHub Pages.
 - Dataene ligger i det private repoet `krishalvo-lab/lister-data`, én JSON-fil per liste.

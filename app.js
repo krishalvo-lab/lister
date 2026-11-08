@@ -15,7 +15,7 @@ const POLL_HOME_MS = 30000;
 
 const TYPES = {
   handleliste: {
-    label: 'Handleliste', flertall: 'Handlelister', status: 'Kjøpt/har hjemme', gruppe: 'Avdeling', tekst: 'Vare', butikk: true,
+    label: 'Handleliste', flertall: 'Handlelister', status: 'Kjøpt/har hjemme', gruppe: 'Avdeling', tekst: 'Vare', butikk: true, ferdig: 'kjøpt',
     avd: ['Frukt og grønt', 'Brød og bakevarer', 'Kjøtt og fisk', 'Pålegg og ost', 'Meieri og egg', 'Tørrvarer',
       'Hermetikk og sauser', 'Krydder', 'Frys', 'Drikke', 'Snacks og godteri', 'Husholdning', 'Hygiene', 'Annet']
   },
@@ -23,8 +23,15 @@ const TYPES = {
   pakkeliste: {
     label: 'Pakkeliste', flertall: 'Pakkelister', status: 'Pakket', gruppe: 'Kategori', tekst: 'Ting', butikk: false,
     avd: ['Klær', 'Toalettsaker', 'Elektronikk', 'Dokumenter', 'Utstyr', 'Mat og drikke', 'Annet']
+  },
+  onskeliste: {
+    label: 'Ønskeliste', flertall: 'Ønskelister', status: 'Kjøpt', gruppe: 'Prioritet', tekst: 'Ønske', butikk: false, ferdig: 'kjøpt',
+    mengde: 'Antall', brukes: false, merknad: 'Størrelse, farge eller lenke', forvalg: 'Gjerne',
+    avd: ['Ønsker meg mest', 'Gjerne', 'Småting']
   }
 };
+const ferdigOrd = T => T.ferdig || 'ferdig';
+const URL_RE = /https?:\/\/[^\s]+/i;
 const typeOf = d => TYPES[d && d.type] || TYPES.huskeliste;
 const KATEGORIER = ['Mat', 'Bygg', 'Hjem', 'Reise', 'Annet'];
 const katOf = d => KATEGORIER.includes(d.kategori) ? d.kategori : '';
@@ -381,7 +388,7 @@ function viewList() {
   const order = d.avdelinger.slice();
   d.punkter.forEach(p => { if (!order.includes(p.avdeling)) order.push(p.avdeling); });
   const lastAvd = ls.get('lister.sistAvd.' + cur.path);
-  const defAvd = order.includes(lastAvd) ? lastAvd : (T === TYPES.huskeliste ? order[0] : (order.includes('Annet') ? 'Annet' : order[order.length - 1]));
+  const defAvd = order.includes(lastAvd) ? lastAvd : order.includes(T.forvalg) ? T.forvalg : (T === TYPES.huskeliste ? order[0] : (order.includes('Annet') ? 'Annet' : order[order.length - 1]));
 
   if (cur.shared) {
     return `<div class="l-head"><div class="t"><p class="eyebrow">${esc(T.label)}${cur.fra ? ' · delt av ' + esc(cur.fra) : ''}</p><h1 class="display">${esc(d.navn)}</h1></div>
@@ -394,7 +401,7 @@ function viewList() {
       </form>
       <div class="actions" style="margin:0 0 6px"><button class="btn btn-yellow" data-act="m-sendback">Send tilbake</button>
         ${token() ? `<button class="btn" data-act="m-import">Lagre i mine lister</button>` : ''}</div>
-      <div class="tools"><label><input type="checkbox" data-act="skjul"${skjul ? ' checked' : ''}> Skjul det som er ${T === TYPES.handleliste ? 'kjøpt' : 'ferdig'}</label></div>`
+      <div class="tools"><label><input type="checkbox" data-act="skjul"${skjul ? ' checked' : ''}> Skjul det som er ${ferdigOrd(T)}</label></div>`
       + listBody(d, T, order, skjul, c, true);
   }
   let html = `<div class="l-head"><div class="t"><p class="eyebrow">${esc(T.label)}${LIVE ? ' · delt med deg' : (d.del_kode ? ' · delt' : '')}</p><h1 class="display">${esc(d.navn)}</h1></div>
@@ -404,7 +411,7 @@ function viewList() {
     <select name="avdeling" aria-label="${esc(T.gruppe)}">${order.map(a => `<option${a === defAvd ? ' selected' : ''}>${esc(a)}</option>`).join('')}</select>
     <button class="btn btn-dark" type="submit" aria-label="Legg til" style="padding:0 16px">+</button>
   </form>
-  <div class="tools"><label><input type="checkbox" data-act="skjul"${skjul ? ' checked' : ''}> Skjul det som er ${T === TYPES.handleliste ? 'kjøpt' : 'ferdig'}</label>
+  <div class="tools"><label><input type="checkbox" data-act="skjul"${skjul ? ' checked' : ''}> Skjul det som er ${ferdigOrd(T)}</label>
     <button class="link" data-act="additem">Legg til med detaljer</button></div>`;
   return html + listBody(d, T, order, skjul, c, false);
 }
@@ -441,10 +448,10 @@ function listBody(d, T, order, skjul, c, shared) {
   });
   if (d.punkter.length && !punkter.length) html += `<div class="empty" style="margin-top:20px">Ingen punkter for denne butikken.</div>`;
   else if (!d.punkter.length) html += `<div class="empty" style="margin-top:20px">${shared ? 'Lista er tom.' : 'Tom liste. Skriv i feltet over for å legge til.'}</div>`;
-  else if (!shown) html += `<div class="empty" style="margin-top:20px">Alt er ${T === TYPES.handleliste ? 'kjøpt' : 'ferdig'} 👌</div>`;
+  else if (!shown) html += `<div class="empty" style="margin-top:20px">Alt er ${ferdigOrd(T)} 👌</div>`;
 
   html += `<section class="sum"><h2 class="display">Oppsummering${filt ? ' – ' + esc(filt === '__uten' ? 'uten butikk' : filt) : ''}</h2><dl>
-    <dt>Antall ${T === TYPES.handleliste ? 'varer' : 'punkter'} totalt</dt><dd>${c.tot}</dd>
+    <dt>Antall ${T === TYPES.handleliste ? 'varer' : T === TYPES.onskeliste ? 'ønsker' : 'punkter'} totalt</dt><dd>${c.tot}</dd>
     <dt><span class="pill" style="background:var(--ja)"></span>Ferdig</dt><dd>${c.Ja}</dd>
     <dt><span class="pill" style="background:var(--nei)"></span>Mangler</dt><dd>${c.Nei}</dd>
     <dt><span class="pill" style="background:var(--usikker)"></span>Usikker${T === TYPES.handleliste ? ' (sjekk hjemme)' : ''}</dt><dd>${c.Usikker}</dd>
@@ -457,14 +464,16 @@ function itemRow(p, T, shared, visAvd) {
   if (p.brukes_i) meta.push('<b>' + esc(p.brukes_i) + '</b>');
   if (visAvd) meta.push(esc(p.avdeling));
   else if (T.butikk && p.butikk) meta.push(esc(p.butikk));
-  if (p.merknad) meta.push(esc(p.merknad));
+  const url = (p.merknad.match(URL_RE) || [''])[0].replace(/[).,]+$/, '');
+  const mtekst = url ? p.merknad.replace(url, '').replace(/\s+/g, ' ').trim() : p.merknad;
+  if (mtekst) meta.push(esc(mtekst));
   if (p.endret_av) meta.push(`<span class="who">${esc(p.endret_av)}${p.endret ? ' · ' + esc(when(p.endret)) : ''}</span>`);
   return `<div class="item s-${esc(p.status)}">
     <button class="st" data-act="cycle" data-id="${esc(p.id)}" aria-label="${esc(T.status)}: ${esc(p.status)}. Trykk for å endre">${esc(p.status)}<small>${esc(T.status.toUpperCase())}</small></button>
     <button class="i-main"${shared ? ' data-act="cycle"' : ' data-act="edit"'} data-id="${esc(p.id)}">
       <span class="i-top"><span class="i-name">${esc(p.tekst)}</span>${p.mengde ? `<span class="i-qty">${esc(p.mengde)}</span>` : ''}</span>
       ${meta.length ? `<span class="i-meta">${meta.join(' · ')}</span>` : ''}
-    </button></div>`;
+    </button>${url ? `<a class="i-link" href="${esc(url)}" target="_blank" rel="noopener" aria-label="Åpne lenke for ${esc(p.tekst)}">Åpne ↗</a>` : ''}</div>`;
 }
 
 /* ---------- sheets ---------- */
@@ -474,7 +483,7 @@ $('#sheet').addEventListener('click', e => { if (e.target.id === 'sheet') closeS
 
 function sheetItem(p) {
   const d = S.cur.data, T = typeOf(d), isNew = !p;
-  p = p || { id: '', tekst: '', mengde: '', avdeling: ls.get('lister.sistAvd.' + S.cur.path) || d.avdelinger[0], brukes_i: '', merknad: '', butikk: '', status: 'Nei' };
+  p = p || { id: '', tekst: '', mengde: '', avdeling: ls.get('lister.sistAvd.' + S.cur.path) || (d.avdelinger.includes(T.forvalg) ? T.forvalg : d.avdelinger[0]), brukes_i: '', merknad: '', butikk: '', status: 'Nei' };
   const order = d.avdelinger.slice(); if (!order.includes(p.avdeling)) order.push(p.avdeling);
   const butikker = [...new Set(Object.values(S.lists).flatMap(l => (l.data.punkter || []).map(x => x.butikk)).filter(Boolean))];
   openSheet(`<h2 class="display">${isNew ? 'Legg til' : 'Endre'}</h2>
@@ -483,14 +492,14 @@ function sheetItem(p) {
       <input type="hidden" name="status" value="${esc(p.status)}"></div>
     <div class="field"><label for="i-tekst">${esc(T.tekst)}</label><input id="i-tekst" type="text" name="tekst" value="${esc(p.tekst)}" required${isNew ? ' autofocus' : ''}></div>
     <div class="row2">
-      <div class="field"><label for="i-mengde">Mengde</label><input id="i-mengde" type="text" name="mengde" value="${esc(p.mengde)}" placeholder="f.eks. 2 stk, ?"></div>
+      <div class="field"><label for="i-mengde">${esc(T.mengde || 'Mengde')}</label><input id="i-mengde" type="text" name="mengde" value="${esc(p.mengde)}" placeholder="f.eks. 2 stk, ?"></div>
       <div class="field"><label for="i-avd">${esc(T.gruppe)}</label><input id="i-avd" type="text" name="avdeling" value="${esc(p.avdeling)}" list="avd-list" required>
         <datalist id="avd-list">${order.map(a => `<option value="${esc(a)}">`).join('')}</datalist></div>
     </div>
-    <div class="field"><label for="i-brukes">Brukes i</label><input id="i-brukes" type="text" name="brukes_i" value="${esc(p.brukes_i)}"></div>
+    ${T.brukes === false ? `<input type="hidden" name="brukes_i" value="${esc(p.brukes_i)}">` : `<div class="field"><label for="i-brukes">Brukes i</label><input id="i-brukes" type="text" name="brukes_i" value="${esc(p.brukes_i)}"></div>`}
     ${T.butikk ? `<div class="field"><label for="i-butikk">Butikk</label><input id="i-butikk" type="text" name="butikk" value="${esc(p.butikk)}" list="butikk-list">
       <datalist id="butikk-list">${butikker.map(b => `<option value="${esc(b)}">`).join('')}</datalist></div>` : ''}
-    <div class="field"><label for="i-merknad">Merknad</label><input id="i-merknad" type="text" name="merknad" value="${esc(p.merknad)}"></div>
+    <div class="field"><label for="i-merknad">Merknad</label><input id="i-merknad" type="text" name="merknad" value="${esc(p.merknad)}"${T.merknad ? ` placeholder="${esc(T.merknad)}"` : ''}></div>
     <div class="actions"><button class="btn btn-dark" type="submit">${isNew ? 'Legg til' : 'Lagre'}</button><button class="btn" type="button" data-act="close">Avbryt</button></div>
     ${isNew ? '' : `<div class="actions"><button class="btn btn-danger" type="button" data-act="delitem" data-id="${esc(p.id)}">Fjern fra lista</button></div>`}
   </form>`);
@@ -501,7 +510,7 @@ function sheetNewList(prefill) {
   openSheet(`<h2 class="display">${prefill && prefill.copyOf ? 'Kopier liste' : 'Ny liste'}</h2>
   <form data-form="newlist">
     <div class="field"><label for="n-navn">Navn</label><input id="n-navn" type="text" name="navn" value="${esc((prefill && prefill.navn) || '')}" placeholder="f.eks. Fajitas, Hytta, Tanzania" required autofocus></div>
-    <div class="field"><label>Type</label><div class="seg">${Object.entries(TYPES).map(([k, v]) => `<button type="button" class="v-type" data-act="seg" data-val="${k}" aria-pressed="${k === t}">${v.label}</button>`).join('')}</div>
+    <div class="field"><label>Type</label><div class="seg seg2">${Object.entries(TYPES).map(([k, v]) => `<button type="button" class="v-type" data-act="seg" data-val="${k}" aria-pressed="${k === t}">${v.label}</button>`).join('')}</div>
       <input type="hidden" name="status" value="${t}"></div>
     <div class="field"><label>Kategori</label><div class="seg seg5">${KATEGORIER.map(x => `<button type="button" class="v-type" data-act="seg" data-val="${x}" aria-pressed="${x === ((prefill && prefill.kategori) || '')}">${x}</button>`).join('')}</div>
       <input type="hidden" name="kategori" value="${(prefill && prefill.kategori) || ''}"></div>
