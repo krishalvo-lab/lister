@@ -67,5 +67,4 @@ Bare det han ber om, ingen ekstra verktøy eller utstyr. Ukjent mengde skrives s
 - **Nøkler:** hver enhet trenger sin egen token. Det finnes ingen brukerkontoer.
 - **Offline:** ingen offline-støtte (ingen service worker). Uten nett lagres ingenting.
 - **Workeren** bruker én felles token. Roterer du den, må den inn på nytt som secret i Cloudflare.
-- **Dataopprydding:** `lister-data/lister/1.json` er en testliste Kristian laget. Slett den bare hvis han ber om det.
 - **Ikke laget ennå:** endre rekkefølge på avdelinger og punkter, angre siste endring, egne avdelingslister per butikk, varsler.
